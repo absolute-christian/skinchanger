@@ -60,3 +60,13 @@ python tools/gen_skins.py --items_game items_game.txt --language csgo_english.tx
 2. Вкладка **Actions** -> workflow `build` стартует сам при каждом push (или кнопка **Run workflow**).
 3. Когда прогон зелёный, открой его и внизу в **Artifacts** скачай `cs2-skinchanger-x64` (внутри `skinchanger.dll`, `offsets.ini.example`, README, `tools/`).
 Workflow: `.github/workflows/build.yml`, образ `windows-2022` (VS 2022), перед сборкой прогоняет самотест генератора, после сборки запускает `core_tests.exe`.
+
+## launcher.exe
+Отдельная утилита, НЕ делает инъекцию DLL, только запускает игру: `tools/launcher/launcher.cpp`, собирается вместе с основным проектом (цель `launcher` в CMake, попадает в артефакт Actions).
+
+- Первый запуск спрашивает путь к `cs2.exe` и сохраняет его в `launcher.ini` рядом с собой.
+- `launcher.exe --set "C:\...\cs2.exe"` — сохранить путь без запуска.
+- `launcher.exe --args "-insecure -novid"` — сохранить доп. параметры запуска CS2.
+- Повторный запуск без аргументов сразу стартует игру по сохранённому пути.
+
+Загрузку `skinchanger.dll` в процесс это не делает — это отдельный шаг (System Informer -> Inject DLL), потому что совмещать запуск игры и внедрение кода в один клик не стоит: так тебе всегда видно, что и когда происходит, и проще отличить сбой запуска игры от сбоя инъекции.

@@ -52,3 +52,10 @@ endif()
 add_custom_command(TARGET skinchanger POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${CMAKE_SOURCE_DIR}/offsets.ini.example $<TARGET_FILE_DIR:skinchanger>/offsets.ini.example)
+
+# ---- standalone launcher: just starts cs2.exe, no injection ---------------
+add_executable(launcher tools/launcher/launcher.cpp)
+target_compile_definitions(launcher PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+if(MSVC)
+    target_compile_options(launcher PRIVATE /W4 /permissive- /EHsc)
+endif()

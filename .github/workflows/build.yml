@@ -38,6 +38,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path dist | Out-Null
           Copy-Item build/Release/skinchanger.dll dist/
+          Copy-Item build/Release/launcher.exe dist/
           Copy-Item offsets.ini.example, README.md dist/
           Copy-Item tools dist/tools -Recurse
 
