@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 24 24" fill="none" stroke="#A088FF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <!-- original icon drawn for this project in a 24px stroke-icon style: a spray-paint can with sparkles -->
+  <rect x="7" y="10" width="8" height="11" rx="2"/>
+  <path d="M9 10V7.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V10"/>
+  <path d="M10 6.5V5h2v1.5"/>
+  <path d="M7 14h8"/>
+  <path d="M18 5.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z"/>
+  <path d="M19.5 12l.4.9.9.4-.9.4-.4.9-.4-.9-.9-.4.9-.4z"/>
+</svg>

@@ -1,0 +1,58 @@
+; Copy to offsets.ini (next to skinchanger.dll) and fill in.
+; EMPTY = unset. The tool refuses to write to the game while any REQUIRED key is
+; empty or while the build identity below does not match the running client.dll.
+; Nothing in this file is a real CS2 value; I did not have your dump or build.
+;
+; Source of every value: your own cs2-dumper output for the build you run.
+;   RVA keys        -> offsets.json / client_dll.json "dwEntityList" etc. (RVA from client.dll base)
+;   field offsets   -> client_dll.json (schema classes named in comments)
+; Record in build_note which build the values came from.
+
+[build]
+build_note =
+; Identity of the client.dll these values belong to. Read them from the dll on disk
+; (PE header: TimeDateStamp and SizeOfImage), e.g. in System Informer / PE-bear.
+client_time_date_stamp =
+client_size_of_image =
+
+[globals]            ; RVAs from the client.dll base
+dwEntityList =
+dwLocalPlayerPawn =
+dwLocalPlayerController =
+
+[entity_system]
+; Handle -> entity. Confirm all of these in ReClass on your build before trusting them.
+handle_index_mask =        ; low bits of a CHandle that form the entity index
+handle_chunk_shift =       ; index >> shift = chunk number
+handle_chunk_mask =        ; must equal (1 << shift) - 1, checked on load
+entlist_chunk_base =       ; offset inside the entity list where the chunk pointer array starts
+entity_stride =            ; size of one entity identity slot inside a chunk
+identity_handle_off =      ; OPTIONAL: offset of the stored handle inside an identity slot (stale-handle check)
+utl_vector_size_off =      ; CUtlVector: offset of the count   (0 is a real value, empty is unset)
+utl_vector_data_off =      ; CUtlVector: offset of the data pointer
+
+[fields]
+m_pWeaponServices =        ; C_BasePlayerPawn
+m_hMyWeapons =             ; CPlayer_WeaponServices
+m_AttributeManager =       ; C_EconEntity
+m_Item =                   ; C_AttributeContainer
+m_iItemDefinitionIndex =   ; C_EconItemView
+m_iItemIDHigh =            ; C_EconItemView
+m_iItemIDLow =             ; OPTIONAL, C_EconItemView
+m_iAccountID =             ; C_EconItemView
+m_nFallbackPaintKit =      ; C_EconEntity
+m_nFallbackSeed =          ; C_EconEntity
+m_flFallbackWear =         ; C_EconEntity
+m_nFallbackStatTrak =      ; C_EconEntity
+m_steamID =                ; CBasePlayerController
+
+[hooks]
+; Without a signature + confirmation the menu works but NOTHING is written to the game.
+; Pattern syntax: "48 8B ?? 05", at least 4 concrete bytes, must match exactly once in client.dll.
+sig_frame_stage_notify =
+frame_stage_apply =              ; the stage number at which the skins are written (find it with the recipe in README)
+confirm_fsn_prototype =          ; set to 1 only after you verified the function is void(this, int stage)
+fsn_apply_after_original =       ; 1 = write after the original ran, 0/empty = before
+; Optional: function that rebuilds a weapon's visual state after fallback values change.
+sig_regenerate_weapon_skin =
+confirm_regen_prototype =        ; set to 1 only after you verified it is void(weapon*)

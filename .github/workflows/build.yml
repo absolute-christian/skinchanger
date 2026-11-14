@@ -1,0 +1,48 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    # Pinned: this image ships Visual Studio 2022, which the "Visual Studio 17 2022" generator below needs.
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skin database generator self-test
+        shell: pwsh
+        run: python tools/gen_skins.py --selftest
+
+      - name: Configure
+        shell: pwsh
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --config Release --parallel
+
+      - name: Core tests (portable logic, no game needed)
+        shell: pwsh
+        run: ./build/Release/core_tests.exe
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist | Out-Null
+          Copy-Item build/Release/skinchanger.dll dist/
+          Copy-Item offsets.ini.example, README.md dist/
+          Copy-Item tools dist/tools -Recurse
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cs2-skinchanger-x64
+          path: dist/
+          if-no-files-found: error

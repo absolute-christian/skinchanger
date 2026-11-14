@@ -1,0 +1,7 @@
+build/
+dist/
+*.user
+*.log
+profile.ini
+offsets.ini
+skins.tsv

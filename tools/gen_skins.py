@@ -1,0 +1,228 @@
+#!/usr/bin/env python3
+"""Builds skins.tsv from the game's own files, so nothing is typed in by hand.
+
+Inputs (extract them from the CS2 VPKs, e.g. with VRF / Source2Viewer):
+  --items_game  scripts/items/items_game.txt
+  --language    resource/csgo_english.txt          (optional, only for readable labels)
+
+Output rows (tab separated):
+  W  def_index  internal_name  label
+  P  paint_kit_id  internal_name  label
+
+ASSUMED file layout (from the usual items_game.txt shape; the script stops with
+a clear error if it does not hold for your build instead of guessing):
+  "items_game" { "items" { "<def_index>" { "name" "weapon_ak47" "item_name" "#SFUI_WPNHUD_AK47" ... } }
+                 "paint_kits" { "<id>" { "name" "cu_ak47_cobra" "description_tag" "#PaintKit_..." } } }
+
+Usage: python tools/gen_skins.py --items_game items_game.txt [--language csgo_english.txt] -o skins.tsv
+Self-test on synthetic data: python tools/gen_skins.py --selftest
+"""
+import argparse
+import re
+import sys
+
+TOKEN = re.compile(r'"((?:[^"\\]|\\.)*)"|([{}])|//[^\n]*|\s+')
+
+
+def tokenize(text):
+    pos = 0
+    while pos < len(text):
+        m = TOKEN.match(text, pos)
+        if not m:
+            raise ValueError("unparsable text at offset %d: %r" % (pos, text[pos:pos + 30]))
+        pos = m.end()
+        if m.group(1) is not None:
+            yield ("s", m.group(1).replace('\\"', '"').replace("\\\\", "\\"))
+        elif m.group(2):
+            yield (m.group(2), m.group(2))
+
+
+def parse_vdf(text):
+    """Returns a list of (key, value) pairs; value is a str or a nested list. Keeps duplicate keys."""
+    toks = list(tokenize(text))
+    i = 0
+
+    def block():
+        nonlocal i
+        out = []
+        while i < len(toks):
+            kind, val = toks[i]
+            if kind == "}":
+                i += 1
+                return out
+            if kind != "s":
+                raise ValueError("expected key, got %r" % val)
+            key = val
+            i += 1
+            if i >= len(toks):
+                raise ValueError("dangling key %r" % key)
+            kind2, val2 = toks[i]
+            if kind2 == "{":
+                i += 1
+                out.append((key, block()))
+            elif kind2 == "s":
+                i += 1
+                out.append((key, val2))
+            else:
+                raise ValueError("unexpected %r after key %r" % (val2, key))
+        return out
+
+    root = block()
+    return root
+
+
+def child(pairs, key):
+    for k, v in pairs:
+        if k.lower() == key.lower() and isinstance(v, list):
+            return v
+    return None
+
+
+def field(pairs, key):
+    for k, v in pairs:
+        if k.lower() == key.lower() and isinstance(v, str):
+            return v
+    return None
+
+
+def load_tokens(path):
+    if not path:
+        return {}
+    with open(path, encoding="utf-8-sig", errors="replace") as f:
+        root = parse_vdf(f.read())
+    lang = child(root, "lang")
+    toks = child(lang, "Tokens") if lang else None
+    if toks is None:
+        raise SystemExit("language file has no lang/Tokens section: %s" % path)
+    return {k.lower(): v for k, v in toks if isinstance(v, str)}
+
+
+def label_for(tag, tokens, fallback):
+    if tag and tag.startswith("#"):
+        hit = tokens.get(tag[1:].lower())
+        if hit:
+            return hit
+    return fallback
+
+
+def build(items_text, tokens):
+    root = parse_vdf(items_text)
+    game = child(root, "items_game")
+    if game is None:
+        raise SystemExit("no items_game block at the top level; is this the right file?")
+    items = child(game, "items")
+    kits = child(game, "paint_kits")
+    if items is None or kits is None:
+        raise SystemExit("items_game has no 'items' and/or 'paint_kits' block; the layout differs from the assumed one")
+
+    rows, seen_w, seen_p = [], set(), set()
+    for key, body in items:
+        if not isinstance(body, list) or not key.isdigit():
+            continue
+        name = field(body, "name") or ""
+        if not name.startswith("weapon_"):
+            continue
+        idx = int(key)
+        if idx in seen_w or not (0 < idx <= 0xFFFF):
+            continue
+        seen_w.add(idx)
+        rows.append(("W", idx, name, label_for(field(body, "item_name"), tokens, name)))
+    for key, body in kits:
+        if not isinstance(body, list) or not key.isdigit():
+            continue
+        pid = int(key)
+        name = field(body, "name") or ""
+        if pid in seen_p or pid == 0 or not name or name in ("default", "workshop_default", "hardened_default"):
+            continue
+        seen_p.add(pid)
+        rows.append(("P", pid, name, label_for(field(body, "description_tag"), tokens, name)))
+    if not any(r[0] == "W" for r in rows) or not any(r[0] == "P" for r in rows):
+        raise SystemExit("extracted no weapons or no paint kits; refusing to write an empty database")
+    return rows
+
+
+def render(rows):
+    def clean(s):
+        return re.sub(r"[\t\r\n]+", " ", s).strip()
+
+    lines = ["# generated by tools/gen_skins.py; W=weapon def index, P=paint kit id"]
+    for kind, idx, name, label in sorted(rows, key=lambda r: (r[0] != "W", r[3].lower(), r[1])):
+        lines.append("%s\t%d\t%s\t%s" % (kind, idx, clean(name), clean(label)))
+    return "\n".join(lines) + "\n"
+
+
+SELFTEST_ITEMS = r'''
+"items_game"
+{
+  // synthetic fixture: ids and names are made up for this test
+  "items"
+  {
+    "1" { "name" "weapon_testgun_a" "item_name" "#T_GunA" }
+    "2" { "name" "weapon_testgun_b" }
+    "3" { "name" "customplayer_x" }
+    "abc" { "name" "weapon_bad" }
+  }
+  "paint_kits"
+  {
+    "0"  { "name" "default" }
+    "10" { "name" "cu_test_one" "description_tag" "#T_KitOne" }
+    "11" { "name" "cu_test_two" }
+  }
+}
+'''
+SELFTEST_LANG = r'''
+"lang" { "Language" "English" "Tokens" { "T_GunA" "Test Gun A" "T_KitOne" "Test \"Kit\" One" } }
+'''
+
+
+def selftest():
+    rows = build(SELFTEST_ITEMS, load_tokens_from_text(SELFTEST_LANG))
+    out = render(rows)
+    want = [
+        "W\t1\tweapon_testgun_a\tTest Gun A",
+        "W\t2\tweapon_testgun_b\tweapon_testgun_b",
+        "P\t11\tcu_test_two\tcu_test_two",  # rows sort by label, case-insensitive
+        'P\t10\tcu_test_one\tTest "Kit" One',
+    ]
+    got = [l for l in out.splitlines() if not l.startswith("#")]
+    if got != want:
+        print("SELFTEST FAILED\n got:", got, "\nwant:", want)
+        return 1
+    for bad in ("{}", '"a" "b"', '"items_game" { "items" { } }'):
+        try:
+            build(bad, {})
+        except (SystemExit, ValueError):
+            continue
+        print("SELFTEST FAILED: bad input accepted:", bad)
+        return 1
+    print("gen_skins selftest passed")
+    return 0
+
+
+def load_tokens_from_text(text):
+    root = parse_vdf(text)
+    toks = child(child(root, "lang"), "Tokens")
+    return {k.lower(): v for k, v in toks if isinstance(v, str)}
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--items_game")
+    ap.add_argument("--language")
+    ap.add_argument("-o", "--output", default="skins.tsv")
+    ap.add_argument("--selftest", action="store_true")
+    a = ap.parse_args()
+    if a.selftest:
+        return selftest()
+    if not a.items_game:
+        ap.error("--items_game is required")
+    with open(a.items_game, encoding="utf-8-sig", errors="replace") as f:
+        rows = build(f.read(), load_tokens(a.language))
+    with open(a.output, "w", encoding="utf-8", newline="\n") as f:
+        f.write(render(rows))
+    print("wrote %s: %d weapons, %d finishes" % (a.output, sum(r[0] == "W" for r in rows), sum(r[0] == "P" for r in rows)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
